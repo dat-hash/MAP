@@ -1,3 +1,5 @@
+PLEASE VIEW IT IN CODE IF YOU WANT AS IT LOOK HORRIBLE IN PREVIEW
+
 This is where I put my own personal project that I just find interesting in
 For now, the project is a sparkfun gnss board ubloc NEO-F10N connect to an esp32-s3
 START OUT:
