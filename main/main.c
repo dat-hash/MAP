@@ -29,6 +29,9 @@ typedef struct {
     float speed_kmh;
     uint8_t satellites;
     uint8_t fix_quality;
+    uint8_t hours;   // 0 - 23 (UTC)
+    uint8_t minutes; // 0 - 59
+    uint8_t seconds; // 0 - 59
     bool valid;
 } gnss_data_t;
 
@@ -59,6 +62,8 @@ typedef struct {
 #define UBX_KEY_CFG_SIGNAL_GPS_L5_HEALTH_OVERRIDE 0x10320001UL
 
 #define UBX_TX_BUFFER_SIZE 128
+
+#define ENABLE_RAW_NMEA_LOGGING 0
 
 // CHEAT CODE
 typedef enum {
@@ -116,6 +121,17 @@ float degree_to_decimal(const char *coordinate, char direction) {
     return decimal;
 }
 
+void parse_nmea_time (const char *time_str, gnss_data_t *gnss){
+    // Field format: HHMMSS.ss
+    if (!time_str ||strlen(time_str) < 6){
+        return;
+    }
+    gnss->hours = (uint8_t)((time_str[0] - '0') * 10 + (time_str[1]- '0'));
+    gnss->minutes = (uint8_t)((time_str[2] - '0') * 10 + (time_str[3]- '0'));
+    gnss->seconds = (uint8_t)((time_str[4] - '0') * 10 + (time_str[5]- '0'));
+
+}
+
 void extract_gnss_rmc(const char *gnss_sentence, gnss_data_t *gnss) {
     char sentence_copy[NMEA_MAX_LENGTH];
     strncpy(sentence_copy, gnss_sentence, sizeof(sentence_copy) - 1);
@@ -131,8 +147,22 @@ void extract_gnss_rmc(const char *gnss_sentence, gnss_data_t *gnss) {
     }
 
     if (field_index > 7 && field[2] && field[2][0] == 'A') {
-        gnss->latitude = degree_to_decimal(field[3], field[4] ? field[4][0] : 'N');
-        gnss->longitude = degree_to_decimal(field[5], field[6] ? field[6][0] : 'E');
+        parse_nmea_time(field[1],gnss);
+
+        if (field[4]) {
+            gnss->latitude = degree_to_decimal(field[3], field[4][0]);
+        }
+        else {
+            gnss->latitude = degree_to_decimal(field[3], 'N');
+        }
+
+        if (field[6]) {
+            gnss->longitude = degree_to_decimal(field[5], field[6][0]);
+        }
+        else {
+            gnss->longitude = degree_to_decimal(field[5],'E');
+        }
+
         gnss->speed_kmh = atof(field[7]) * 1.852f;
         gnss->valid = true;
     } else {
@@ -155,6 +185,7 @@ void extract_gnss_gga(const char *gnss_sentence, gnss_data_t *gnss) {
     }
 
     if (field_index > 9 && field[6] && field[6][0] > '0') {
+        parse_nmea_time(field[1],gnss);
         gnss->fix_quality = (uint8_t)atoi(field[6]);
         gnss->satellites = (uint8_t)atoi(field[7]);
         gnss->altitude   = atof(field[9]);
@@ -228,8 +259,15 @@ void get_gnss_data_task(void *pvParameters) {
                             current_gnss.longitude = ema_lon;
                             current_gnss.altitude  = ema_alt;
                             current_gnss.speed_kmh = ema_speed;
-
-                            ESP_LOGI(TAG, "LAT: %.6f | LON: %.6f | ALT: %.6fm | SPEED: %.6f km/h | SAT: %d | FIX: %d", current_gnss.latitude, current_gnss.longitude, current_gnss.altitude, current_gnss.speed_kmh, current_gnss.satellites, current_gnss.fix_quality);
+                            
+                        #if ENABLE_RAW_NMEA_LOGGING
+                            ESP_LOGI("RAW_NMEA", "%s", nmea_buffer);
+                        #else
+                            // CTRL+T then CTRL+L to start and stop log to a file
+                            ESP_LOGI(TAG, "TIME: %dH-%dM-%dS| LAT: %.6f | LON: %.6f | ALT: %.6fm | SPEED: %.6f km/h | SAT: %d | FIX: %d", 
+                                current_gnss.hours,current_gnss.minutes,current_gnss.seconds,current_gnss.latitude, current_gnss.longitude,
+                                 current_gnss.altitude, current_gnss.speed_kmh, current_gnss.satellites, current_gnss.fix_quality);
+                        #endif
                         } else if ((valid_sentence_count % 100) == 0) {
                             ESP_LOGW(TAG, "%lu valid NMEA sentences parsed, still no GNSS fix", (unsigned long)valid_sentence_count);
                         }
