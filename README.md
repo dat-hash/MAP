@@ -44,6 +44,24 @@ So apparently the USB buffer to report data back got weird i try to flush and al
 UPDATE:
 Walking around with this is annoying so i designed a 3d printed enclosure for it.
 |
-NEWEST UPDATE:
+UPDATE:
 Learned about GIT today, i created a repo and linked the project and all my file to it, paste my old readme into this too. Probably start to include future goal/next milestone from now on.
-  FUTURE GOAL: - get an micro sd card module and also the card itself then write new code for it to log the parsed message into it in CSV form.
+|
+UPDATE:
+So the delay log problem is actually not buffer issue, it the mismatch bauld rate, so i did some research and the gnss board will remember it bauld rate as it have an onboard flash, so now i implemented a smarter way, still use dynamic bauld rate but now send an ack ubx and switching between the default and target bauld until the ack valid, that solved the issue so retry and never assume.
+|
+UPDATE:
+Real world testing at uni and it kinda weird the data kept jumping around it horrible, also i implemented message that report gnss no fix rather than discard mystery.
+|
+UPDATE:
+After some more research i see that they actually have a dynamic platform and it supposed to use a virtual assumption based extended kalman filter to get rid of pesky noise, so i implement that too. I might look into filtering or averaging technique latter it seem to improving the signal.
+|
+UPDATE:
+design a new enclosure for it much more compact and also rewired the board for better intergrity.
+|
+NEWEST UPDATE:
+With a random math vid i stumble on youtube i now implemented an EMA filter for data, just a tad better but nevertheless still an improvement (might look more into kalman latter), i now config the gnns board to 10Hz, added the timestamp to the log, and a code toggle for raw nmea log in case i need it in the future (maybe i just log NMEA to a micro sd card and parse latter on laptop with python)
+FUTURE GOAL: - get an micro sd card module and also the card itself then write new code for it to log the parsed message into it in CSV form.
+             - Implement a web host type to view it on phone aka display data wirelessly (maybe)
+             - Implement an imu (maybe)
+             - Fuse the two sensor (maybe)
