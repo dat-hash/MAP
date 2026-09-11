@@ -17,6 +17,11 @@
 #define GNSS_UART_TARGET_BAUD  115200
 static const char *TAG = "GNSS_PARSER";
 
+// tunable alpha for ema
+#define ema_alpha_position 0.02
+#define ema_alpha_altitude 0.005
+#define ema_alpha_speed 0.04
+
 typedef struct {
     float latitude;
     float longitude;
@@ -28,29 +33,42 @@ typedef struct {
 } gnss_data_t;
 
 // UBX Protocol Framing Constants
-#define UBX_SYNC_CHAR_1   0xB5
-#define UBX_SYNC_CHAR_2   0x62
-#define UBX_CLASS_CFG     0x06
+#define UBX_SYNC_CHAR_1 0xB5
+#define UBX_SYNC_CHAR_2 0x62
+#define UBX_CLASS_CFG 0x06
 #define UBX_ID_CFG_VALSET 0x8A
-#define UBX_CLASS_ACK     0x05
-#define UBX_ID_ACK_ACK    0x01
-#define UBX_ID_ACK_NAK    0x00
+#define UBX_CLASS_ACK 0x05
+#define UBX_ID_ACK_ACK 0x01
+#define UBX_ID_ACK_NAK 0x00
 
-#define UBX_LAYER_RAM   0x01
-#define UBX_LAYER_BBR   0x02
+#define UBX_LAYER_RAM 0x01
+#define UBX_LAYER_BBR 0x02
 #define UBX_LAYER_FLASH 0x04
 
-#define UBX_KEY_CFG_UART1_BAUDRATE            0x40520001UL
-#define UBX_KEY_CFG_UART1OUTPROT_UBX          0x10740001UL
-#define UBX_KEY_CFG_UART1OUTPROT_NMEA         0x10740002UL
-#define UBX_KEY_CFG_MSGOUT_NMEA_ID_RMC_UART1  0x209100acUL
-#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GGA_UART1  0x209100bbUL
-#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GLL_UART1  0x209100caUL
-#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GSA_UART1  0x209100c0UL
-#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GSV_UART1  0x209100c5UL
-#define UBX_KEY_CFG_MSGOUT_NMEA_ID_VTG_UART1  0x209100b1UL
+#define UBX_KEY_CFG_UART1_BAUDRATE 0x40520001UL
+#define UBX_KEY_CFG_UART1OUTPROT_UBX 0x10740001UL
+#define UBX_KEY_CFG_UART1OUTPROT_NMEA 0x10740002UL
+#define UBX_KEY_CFG_MSGOUT_NMEA_ID_RMC_UART1 0x209100acUL
+#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GGA_UART1 0x209100bbUL
+#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GLL_UART1 0x209100caUL
+#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GSA_UART1 0x209100c0UL
+#define UBX_KEY_CFG_MSGOUT_NMEA_ID_GSV_UART1 0x209100c5UL
+#define UBX_KEY_CFG_MSGOUT_NMEA_ID_VTG_UART1 0x209100b1UL
+#define UBX_KEY_CFG_RATE_MEAS 0x30210001UL
+#define UBX_KEY_CFG_NAVSPG_DYNMODEL 0x20110021UL
+#define UBX_KEY_CFG_SIGNAL_GPS_L5_HEALTH_OVERRIDE 0x10320001UL
 
 #define UBX_TX_BUFFER_SIZE 128
+
+// CHEAT CODE
+typedef enum {
+    UBX_PORTABLE_MODE  = 0, // Default 
+    UBX_STATIONARY_MODE = 2, // Stand still
+    UBX_PEDESTRIAN_MODE = 3, // < 30 km/h) but static wander
+    UBX_AUTOMOTIVE_MODE = 4, // < 100 km/h
+    UBX_SEA_MODE        = 5, // Zero alt assumes sea-level travel
+    UBX_AIR_1G_MODE     = 6  // Need for speed
+} VIRTUAL_KALMAN_CHEAT;
 
 void start_gnss_uart(uint32_t baud_rate) {
     uart_config_t uart_config = {
@@ -141,24 +159,22 @@ void extract_gnss_gga(const char *gnss_sentence, gnss_data_t *gnss) {
         gnss->satellites = (uint8_t)atoi(field[7]);
         gnss->altitude   = atof(field[9]);
     } else if (field_index > 6 && field[6]) {
-        // GGA reported explicitly (fix_quality '0'), so trust it over any
-        // stale value from an earlier fix -- otherwise a lost fix can keep
-        // showing an old altitude/satellite count alongside fresh position
-        // data once RMC recovers.
         gnss->fix_quality = 0;
     }
 }
 
 void get_gnss_data_task(void *pvParameters) {
+    float ema_lat = 0.0f;
+    float ema_lon = 0.0f;
+    float ema_alt = 0.0f;
+    float ema_speed = 0.0f;
+    bool first_run = true;
     uint8_t byte;
     char nmea_buffer[NMEA_MAX_LENGTH];
     int buffer_index = 0;
     bool accumulation = false;
     gnss_data_t current_gnss = {0};
 
-    // Diagnostic counters so you can tell "not receiving anything" apart
-    // from "receiving sentences but no fix yet" -- the two causes of the
-    // "sometimes nothing" symptom look identical unless you log this.
     uint32_t valid_sentence_count = 0;
     uint32_t checksum_fail_count = 0;
 
@@ -194,13 +210,27 @@ void get_gnss_data_task(void *pvParameters) {
                         }
 
                         if (current_gnss.valid && current_gnss.fix_quality > 0) {
-                            ESP_LOGI(TAG, "LAT: %.6f | LON: %.6f | ALT: %.1fm | SPEED: %.1f km/h | SAT: %d | FIX: %d", current_gnss.latitude, current_gnss.longitude, current_gnss.altitude, current_gnss.speed_kmh, current_gnss.satellites, current_gnss.fix_quality);
+                                if(first_run){
+                                    ema_lat = current_gnss.latitude;
+                                    ema_lon = current_gnss.longitude;
+                                    ema_alt = current_gnss.altitude;
+                                    ema_speed = current_gnss.speed_kmh;
+                                    first_run = false;
+                                }
+                                else{
+                                    ema_lat = ema_alpha_position * current_gnss.latitude + (1-ema_alpha_position)*ema_lat;
+                                    ema_lon = ema_alpha_position * current_gnss.longitude + (1-ema_alpha_position)*ema_lon;
+                                    ema_alt = ema_alpha_altitude * current_gnss.altitude + (1-ema_alpha_altitude)*ema_alt;
+                                    ema_speed = ema_alpha_speed * current_gnss.speed_kmh + (1-ema_alpha_speed)*ema_speed;
+                                }
+
+                            current_gnss.latitude  = ema_lat;
+                            current_gnss.longitude = ema_lon;
+                            current_gnss.altitude  = ema_alt;
+                            current_gnss.speed_kmh = ema_speed;
+
+                            ESP_LOGI(TAG, "LAT: %.6f | LON: %.6f | ALT: %.6fm | SPEED: %.6f km/h | SAT: %d | FIX: %d", current_gnss.latitude, current_gnss.longitude, current_gnss.altitude, current_gnss.speed_kmh, current_gnss.satellites, current_gnss.fix_quality);
                         } else if ((valid_sentence_count % 100) == 0) {
-                            // Fires periodically while sentences are parsing
-                            // correctly but no fix has been acquired yet --
-                            // if you never see even this, the receiver isn't
-                            // getting valid sentences at all (a comms/config
-                            // problem, not an acquisition-time problem).
                             ESP_LOGW(TAG, "%lu valid NMEA sentences parsed, still no GNSS fix", (unsigned long)valid_sentence_count);
                         }
                     } else {
@@ -257,6 +287,15 @@ static void ubx_append_key_value_u4(uint8_t *frame, size_t *index, uint32_t key_
     frame[(*index)++] = (uint8_t)((value >> 24) & 0xFF);
 }
 
+static void ubx_append_key_value_u2(uint8_t *frame, size_t *index, uint32_t key_id, uint16_t value) {
+    frame[(*index)++] = (uint8_t)(key_id & 0xFF);
+    frame[(*index)++] = (uint8_t)((key_id >> 8) & 0xFF);
+    frame[(*index)++] = (uint8_t)((key_id >> 16) & 0xFF);
+    frame[(*index)++] = (uint8_t)((key_id >> 24) & 0xFF);
+    frame[(*index)++] = (uint8_t)(value & 0xFF);
+    frame[(*index)++] = (uint8_t)((value >> 8) & 0xFF);
+}
+
 static void ubx_finalize_and_send(uint8_t *frame, size_t index) {
     size_t payload_length = index - 6;
     uint8_t ck_a, ck_b;
@@ -280,11 +319,6 @@ static void ubx_finalize_and_send(uint8_t *frame, size_t index) {
 // the class/id of the message we're waiting on. Returns true only on a
 // matching ACK within timeout_ms; false on a NAK, a non-matching ACK/NAK,
 // or timeout.
-//
-// This does NOT verify the ACK/NAK frame's own checksum -- for a
-// safety-critical use of this, add that check too. Here it's used purely
-// as a gate on "should I trust the config I just sent," which is enough
-// to stop the host and module baud rates from silently diverging.
 // -------------------------------------------------------------------------
 static bool ubx_wait_for_ack(uint8_t acked_class, uint8_t acked_id, uint32_t timeout_ms) {
     uint8_t byte;
@@ -370,7 +404,10 @@ bool configure_gnss_module(bool persist_to_flash) {
 
     size_t index = ubx_build_valset_header(frame, layers);
 
+    // config the gnss board
+    ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_NAVSPG_DYNMODEL, UBX_PEDESTRIAN_MODE);
     ubx_append_key_value_u4(frame, &index, UBX_KEY_CFG_UART1_BAUDRATE, GNSS_UART_TARGET_BAUD);
+    ubx_append_key_value_u2(frame, &index, UBX_KEY_CFG_RATE_MEAS, 100);
     ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_UART1OUTPROT_UBX, 1);
     ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_UART1OUTPROT_NMEA, 1);
     ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_MSGOUT_NMEA_ID_RMC_UART1, 1);
@@ -379,9 +416,11 @@ bool configure_gnss_module(bool persist_to_flash) {
     ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_MSGOUT_NMEA_ID_GSA_UART1, 0);
     ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_MSGOUT_NMEA_ID_GSV_UART1, 0);
     ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_MSGOUT_NMEA_ID_VTG_UART1, 0);
+    ubx_append_key_value_u1(frame, &index, UBX_KEY_CFG_SIGNAL_GPS_L5_HEALTH_OVERRIDE, 1);
 
     ubx_finalize_and_send(frame, index);
 
+    // wait for the board to say ok to the config so to switch to target bauld
     if (!ubx_wait_for_ack(UBX_CLASS_CFG, UBX_ID_CFG_VALSET, 300)) {
         return false;
     }
@@ -458,7 +497,7 @@ void app_main(void) {
     // try, retry a few times with a growing delay between attempts. This
     // is what turns "sometimes it just never comes up until I re-power
     // it" into "it takes an extra second or two, every time."
-    const int max_attempts = 5;
+    const int max_attempts = 10;
     bool gnss_ready = false;
     int attempt;
 
