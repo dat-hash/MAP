@@ -12,6 +12,7 @@
 
 #include "esp_log.h"
 
+
 namespace gnss {
 
 // =========================================================================
@@ -24,6 +25,7 @@ GnssDriver::GnssDriver() : GnssDriver(Config{}) {}
 GnssDriver::GnssDriver(const Config &config) : config_(config) {}
 
 GnssDriver::~GnssDriver() {
+
     if (task_handle_ != nullptr) {
         vTaskDelete(task_handle_);
     }
@@ -37,6 +39,7 @@ GnssDriver::~GnssDriver() {
 // =========================================================================
 
 void GnssDriver::configure_uart(uint32_t baud_rate) {
+    
     uart_config_t uart_config = {
         .baud_rate  = static_cast<int>(baud_rate),
         .data_bits  = UART_DATA_8_BITS,
@@ -49,10 +52,8 @@ void GnssDriver::configure_uart(uint32_t baud_rate) {
     };
 
     ESP_ERROR_CHECK(uart_param_config(config_.port, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(config_.port, config_.tx_pin, config_.rx_pin,
-                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    ESP_ERROR_CHECK(uart_driver_install(config_.port, kUartRxBufferSize * 2,
-                                        0, 0, nullptr, 0));
+    ESP_ERROR_CHECK(uart_set_pin(config_.port, config_.tx_pin, config_.rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_driver_install(config_.port, kUartRxBufferSize * 2, 0, 0, nullptr, 0));
 }
 
 // =========================================================================
@@ -60,12 +61,14 @@ void GnssDriver::configure_uart(uint32_t baud_rate) {
 // =========================================================================
 
 bool GnssDriver::begin() {
+
     configure_uart(config_.default_baud);
     vTaskDelay(pdMS_TO_TICKS(500));
 
     bool ready = false;
 
     for (int attempt = 1; attempt <= kMaxAttempts; attempt++) {
+
         ESP_LOGI(kTag, "GNSS configuration attempt %d of %d", attempt, kMaxAttempts);
 
         if (find_and_configure_module()) {
@@ -77,15 +80,11 @@ bool GnssDriver::begin() {
     }
 
     if (!ready) {
-        ESP_LOGE(kTag,
-                 "Giving up on GNSS module after %d attempts -- check wiring/power. "
-                 "Continuing at %" PRIu32 " baud regardless, please send hopes and prayers.",
-                 kMaxAttempts, config_.target_baud);
-                 ESP_ERROR_CHECK(uart_set_baudrate(config_.port,config_.target_baud));
+        ESP_LOGE(kTag,"Giving up on GNSS module after %d attempts -- check wiring/power. " "Continuing at %" PRIu32 " baud regardless, please send hopes and prayers.", kMaxAttempts, config_.target_baud);
+        ESP_ERROR_CHECK(uart_set_baudrate(config_.port,config_.target_baud));
     }
 
-    xTaskCreate(&GnssDriver::task_trampoline, "gnss_parser", kTaskStackBytes,
-               this, kTaskPriority, &task_handle_);
+    xTaskCreate(&GnssDriver::task_trampoline, "gnss_parser", kTaskStackBytes, this, kTaskPriority, &task_handle_);
 
     return ready;
 }
@@ -137,8 +136,7 @@ void GnssDriver::run_task() {
                     portEXIT_CRITICAL(&lock_);
 
                     // CTRL+T then CTRL+L to start and stop log to a file
-                    ESP_LOGI(kTag,
-                             "%02uH-%02uM-%02uS| LAT: %.7f | LON: %.7f | ALT: %.2fm | SPEED: %.2f km/h | SAT: %u | FIX: %u",
+                    ESP_LOGI(kTag, "%02uH-%02uM-%02uS| LAT: %.7f | LON: %.7f | ALT: %.2fm | SPEED: %.2f km/h | SAT: %u | FIX: %u",
                              raw.hours, raw.minutes, raw.seconds,
                              filter_.latitude, filter_.longitude,
                              filter_.altitude, filter_.speed_kmh,
@@ -150,8 +148,7 @@ void GnssDriver::run_task() {
                 no_fix_count++;
 
                 if ((no_fix_count % 100) == 0) {
-                    ESP_LOGW(kTag, "%" PRIu32 " epochs parsed, still no GNSS fix (SAT: %u)",
-                             no_fix_count, raw.satellites);
+                    ESP_LOGW(kTag, "%" PRIu32 " epochs parsed, still no GNSS fix (SAT: %u)", no_fix_count, raw.satellites);
                 } else {
                     // Stay quiet between periodic reports.
                 }
@@ -208,8 +205,7 @@ bool GnssDriver::find_and_configure_module() {
         if (candidate_baud == config_.target_baud) {
             // Already where we want it. No baud message, no flash write.
         } else {
-            ESP_LOGI(kTag, "Switching module to %" PRIu32 " baud and persisting to flash",
-                     config_.target_baud);
+            ESP_LOGI(kTag, "Switching module to %" PRIu32 " baud and persisting to flash", config_.target_baud);
 
             send_baud_config(config_.target_baud);
             vTaskDelay(pdMS_TO_TICKS(150));
@@ -222,8 +218,7 @@ bool GnssDriver::find_and_configure_module() {
             ESP_LOGI(kTag, "GNSS link verified at %" PRIu32 " baud", config_.target_baud);
             return true;
         } else {
-            ESP_LOGW(kTag, "Configured, but no valid NMEA at %" PRIu32 " baud -- retrying",
-                     config_.target_baud);
+            ESP_LOGW(kTag, "Configured, but no valid NMEA at %" PRIu32 " baud -- retrying", config_.target_baud);
             continue;
         }
     }
@@ -288,6 +283,7 @@ bool GnssDriver::wait_for_ack(uint8_t acked_class, uint8_t acked_id, uint32_t ti
     TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
 
     while ((xTaskGetTickCount() - start_tick) < timeout_ticks) {
+
         int bytes_read = uart_read_bytes(config_.port, &byte, 1, pdMS_TO_TICKS(20));
 
         if (bytes_read <= 0) {
@@ -552,6 +548,7 @@ double GnssDriver::degree_to_decimal(const char *coordinate, char direction) {
 }
 
 void GnssDriver::parse_time(const char *time_field, Fix &fix) {
+
     if (time_field == nullptr || std::strlen(time_field) < 6) {
         return;
     }
@@ -562,6 +559,7 @@ void GnssDriver::parse_time(const char *time_field, Fix &fix) {
 }
 
 bool GnssDriver::sentence_is(const char *sentence, const char *type3) {
+
     if (sentence[0] != '$') {
         return false;
     }
@@ -569,8 +567,8 @@ bool GnssDriver::sentence_is(const char *sentence, const char *type3) {
     return std::strncmp(&sentence[3], type3, 3) == 0;
 }
 
-int GnssDriver::split_fields(const char *sentence, char *scratch, size_t scratch_size,
-                             std::array<char *, kMaxFields> &field) {
+int GnssDriver::split_fields(const char *sentence, char *scratch, size_t scratch_size, std::array<char *, kMaxFields> &field) {
+
     std::strncpy(scratch, sentence, scratch_size - 1);
     scratch[scratch_size - 1] = '\0';
 
@@ -592,6 +590,7 @@ int GnssDriver::split_fields(const char *sentence, char *scratch, size_t scratch
 }
 
 bool GnssDriver::extract_rmc(const char *sentence, Fix &fix) {
+
     std::array<char, 83> sentence_copy{};
     std::array<char *, kMaxFields> field{};
 
@@ -620,6 +619,7 @@ bool GnssDriver::extract_rmc(const char *sentence, Fix &fix) {
 }
 
 bool GnssDriver::extract_gga(const char *sentence, Fix &fix) {
+
     std::array<char, 83> sentence_copy{};
     std::array<char *, kMaxFields> field{};
 
@@ -644,8 +644,8 @@ bool GnssDriver::extract_gga(const char *sentence, Fix &fix) {
     }
 }
 
-double GnssDriver::distance_m(double lat1_deg, double lon1_deg,
-                              double lat2_deg, double lon2_deg) {
+double GnssDriver::distance_m(double lat1_deg, double lon1_deg, double lat2_deg, double lon2_deg) {
+
     constexpr double kMetersPerDegreeLatitude = 111320.0;
     constexpr double kDegreesToRadians = M_PI / 180.0;
 
@@ -676,28 +676,27 @@ void GnssDriver::update_position_filter(const Fix &raw) {
         return;
     }
 
-    double jump_m = distance_m(filter_.latitude, filter_.longitude,
-                               raw.latitude, raw.longitude);
+    double jump_m = distance_m(filter_.latitude, filter_.longitude, raw.latitude, raw.longitude);
 
     if (jump_m > kMaxPositionJumpM) {
-        ESP_LOGW(kTag, "Rejected position jump of %.1f m", jump_m);
+        ESP_LOGW(kTag,"Rejected position jump of %.1f m", jump_m);
         return;
     }
 
-    filter_.latitude  = (kEmaAlphaPosition * raw.latitude)  + ((1.0 - kEmaAlphaPosition) * filter_.latitude);
+    filter_.latitude = (kEmaAlphaPosition * raw.latitude) + ((1.0 - kEmaAlphaPosition) * filter_.latitude);
     filter_.longitude = (kEmaAlphaPosition * raw.longitude) + ((1.0 - kEmaAlphaPosition) * filter_.longitude);
-    filter_.speed_kmh = (kEmaAlphaSpeed    * raw.speed_kmh) + ((1.0 - kEmaAlphaSpeed)    * filter_.speed_kmh);
+    filter_.speed_kmh = (kEmaAlphaSpeed    * raw.speed_kmh) + ((1.0 - kEmaAlphaSpeed) * filter_.speed_kmh);
 }
 
 void GnssDriver::update_altitude_filter(const Fix &raw) {
+
     if (!filter_.altitude_seeded) {
         filter_.altitude = raw.altitude;
         filter_.altitude_seeded = true;
         return;
     }
 
-    filter_.altitude = (kEmaAlphaAltitude * raw.altitude) +
-                       ((1.0 - kEmaAlphaAltitude) * filter_.altitude);
+    filter_.altitude = (kEmaAlphaAltitude * raw.altitude) + ((1.0 - kEmaAlphaAltitude) * filter_.altitude);
 }
 
 } // namespace gnss

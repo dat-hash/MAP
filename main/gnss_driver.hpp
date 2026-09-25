@@ -19,15 +19,15 @@ namespace gnss {
 // GNSS FIX WITH IT METADATA
 
 struct Fix {
-    double  latitude    = 0.0;
-    double  longitude   = 0.0;
-    double  altitude    = 0.0;
-    double  speed_kmh   = 0.0;
-    uint8_t satellites  = 0;
+    double latitude = 0.0;
+    double longitude = 0.0;
+    double altitude = 0.0;
+    double speed_kmh = 0.0;
+    uint8_t satellites = 0;
     uint8_t fix_quality = 0;
-    uint8_t hours       = 0;
-    uint8_t minutes     = 0;
-    uint8_t seconds     = 0;
+    uint8_t hours = 0;
+    uint8_t minutes = 0;
+    uint8_t seconds = 0;
 };
 
 // -------------------------------------------------------------------------
@@ -47,12 +47,12 @@ public:
     struct Config {
         // u-blox dynamic platform model. 
         enum class DynamicModel : uint8_t {
-            Portable   = 0, // default
+            Portable = 0, // default
             Stationary = 2, // survey mode
             Pedestrian = 3, // slowish < 30km/h
             Automotive = 4, // vehicle
-            Sea        = 5, // levry low alt
-            Air1G      = 6, // super fast and high
+            Sea = 5, // levry low alt
+            Air1G = 6, // super fast and high
         };
 
         uart_port_t port = UART_NUM_2;
@@ -92,12 +92,12 @@ private:
 
     // Filter state
     struct FilterState {
-        double latitude         = 0.0;
-        double longitude        = 0.0;
-        double altitude         = 0.0;
-        double speed_kmh        = 0.0;
-        bool   position_seeded  = false;
-        bool   altitude_seeded  = false;
+        double latitude = 0.0;
+        double longitude = 0.0;
+        double altitude = 0.0;
+        double speed_kmh = 0.0;
+        bool position_seeded = false;
+        bool altitude_seeded = false;
     };
 
     // A fixed-capacity byte buffer for one NMEA sentence, including
@@ -113,15 +113,14 @@ private:
     class UbxFrame {
     public:
         enum class Layer : uint8_t {
-            Ram   = 0x01,
-            Bbr   = 0x02,
+            Ram = 0x01,
+            Bbr = 0x02,
             Flash = 0x04,
         };
 
         // Combines two layers into one bitmask.
         friend constexpr Layer operator|(Layer a, Layer b) {
-            return static_cast<Layer>(static_cast<uint8_t>(a) |
-                                      static_cast<uint8_t>(b));
+            return static_cast<Layer>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
         }
 
         explicit UbxFrame(Layer layers);
@@ -135,21 +134,27 @@ private:
         // total frame size in bytes.
         size_t finish();
 
-        const uint8_t *data() const { return frame_.data(); }
-        size_t size() const { return index_; }
+        const uint8_t *data() const { 
+            return frame_.data(); 
+        }
+
+        size_t size() const { 
+            return index_; 
+        }
 
     private:
+
         void append_key_bytes(uint32_t key);
 
-        static constexpr uint8_t kSync1      = 0xB5;
-        static constexpr uint8_t kSync2      = 0x62;
-        static constexpr uint8_t kClassCfg   = 0x06;
+        static constexpr uint8_t kSync1 = 0xB5;
+        static constexpr uint8_t kSync2 = 0x62;
+        static constexpr uint8_t kClassCfg = 0x06;
         static constexpr uint8_t kIdCfgValset = 0x8A;
 
         std::array<uint8_t, 256> frame_{};
         size_t capacity_ = frame_.size() - 2; // reserve room for CK_A/CK_B
         size_t index_ = 0;
-        bool   ok_ = true;
+        bool ok_ = true;
     };
 
 
@@ -157,35 +162,35 @@ private:
 
     static constexpr size_t kMaxFields = 20;
 
-    static constexpr double kMaxSpeedAllowKmh  = 350.0;
-    static constexpr double kMaxPositionJumpM  = 150.0;
-    static constexpr double kEmaAlphaPosition  = 0.20;
-    static constexpr double kEmaAlphaAltitude  = 0.05;
-    static constexpr double kEmaAlphaSpeed     = 0.20;
+    static constexpr double kMaxSpeedAllowKmh = 350.0;
+    static constexpr double kMaxPositionJumpM = 150.0;
+    static constexpr double kEmaAlphaPosition = 0.20;
+    static constexpr double kEmaAlphaAltitude = 0.05;
+    static constexpr double kEmaAlphaSpeed = 0.20;
 
-    static constexpr int      kMaxAttempts      = 10;
-    static constexpr uint32_t kTaskStackBytes   = 6144;
-    static constexpr UBaseType_t kTaskPriority  = 5;
-    static constexpr int      kUartRxBufferSize = 1024;
+    static constexpr int kMaxAttempts = 10;
+    static constexpr uint32_t kTaskStackBytes = 6144;
+    static constexpr UBaseType_t kTaskPriority = 5;
+    static constexpr int kUartRxBufferSize = 1024;
 
-    static constexpr uint32_t kKeyUart1Baudrate            = 0x40520001UL;
-    static constexpr uint32_t kKeyUart1OutprotUbx          = 0x10740001UL;
-    static constexpr uint32_t kKeyUart1OutprotNmea         = 0x10740002UL;
-    static constexpr uint32_t kKeyMsgoutRmc                = 0x209100acUL;
-    static constexpr uint32_t kKeyMsgoutGga                = 0x209100bbUL;
-    static constexpr uint32_t kKeyMsgoutGll                = 0x209100caUL;
-    static constexpr uint32_t kKeyMsgoutGsa                = 0x209100c0UL;
-    static constexpr uint32_t kKeyMsgoutGsv                = 0x209100c5UL;
-    static constexpr uint32_t kKeyMsgoutVtg                = 0x209100b1UL;
-    static constexpr uint32_t kKeyRateMeas                 = 0x30210001UL;
-    static constexpr uint32_t kKeyNavspgDynmodel           = 0x20110021UL;
+    static constexpr uint32_t kKeyUart1Baudrate = 0x40520001UL;
+    static constexpr uint32_t kKeyUart1OutprotUbx = 0x10740001UL;
+    static constexpr uint32_t kKeyUart1OutprotNmea = 0x10740002UL;
+    static constexpr uint32_t kKeyMsgoutRmc = 0x209100acUL;
+    static constexpr uint32_t kKeyMsgoutGga = 0x209100bbUL;
+    static constexpr uint32_t kKeyMsgoutGll = 0x209100caUL;
+    static constexpr uint32_t kKeyMsgoutGsa = 0x209100c0UL;
+    static constexpr uint32_t kKeyMsgoutGsv = 0x209100c5UL;
+    static constexpr uint32_t kKeyMsgoutVtg = 0x209100b1UL;
+    static constexpr uint32_t kKeyRateMeas = 0x30210001UL;
+    static constexpr uint32_t kKeyNavspgDynmodel = 0x20110021UL;
     static constexpr uint32_t kKeySignalGpsL5HealthOverride = 0x10320001UL;
 
-    static constexpr uint8_t kUbxClassCfg    = 0x06;
+    static constexpr uint8_t kUbxClassCfg = 0x06;
     static constexpr uint8_t kUbxIdCfgValset = 0x8A;
-    static constexpr uint8_t kUbxClassAck    = 0x05;
-    static constexpr uint8_t kUbxIdAckAck    = 0x01;
-    static constexpr uint8_t kUbxIdAckNak    = 0x00;
+    static constexpr uint8_t kUbxClassAck = 0x05;
+    static constexpr uint8_t kUbxIdAckAck = 0x01;
+    static constexpr uint8_t kUbxIdAckNak = 0x00;
 
     // ---------------------------------------------------------------
     // FreeRTOS trampoline
@@ -211,13 +216,10 @@ private:
     static double degree_to_decimal(const char *coordinate, char direction);
     static void parse_time(const char *time_field, Fix &fix);
     static bool sentence_is(const char *sentence, const char *type3);
-    static int split_fields(const char *sentence, char *scratch,
-                            size_t scratch_size,
-                            std::array<char *, kMaxFields> &field);
+    static int split_fields(const char *sentence, char *scratch, size_t scratch_size, std::array<char *, kMaxFields> &field);
     static bool extract_rmc(const char *sentence, Fix &fix);
     static bool extract_gga(const char *sentence, Fix &fix);
-    static double distance_m(double lat1_deg, double lon1_deg,
-                             double lat2_deg, double lon2_deg);
+    static double distance_m(double lat1_deg, double lon1_deg, double lat2_deg, double lon2_deg);
 
     // ---------------------------------------------------------------
     // Filter
