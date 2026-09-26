@@ -30,7 +30,7 @@
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=c:\\Users\\SVSTORE\\sample_project\\build"
+    "--compile-commands-dir=c:\\Users\\SVSTORE\\Documents\\GitHub\\MAP\\build"
   ],
   "idf.portWin": "COM4",
   "idf.flashType": "JTAG"
