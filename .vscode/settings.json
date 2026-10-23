@@ -33,5 +33,6 @@
     "--compile-commands-dir=c:\\Users\\SVSTORE\\sample_project\\build"
   ],
   "idf.portWin": "COM4",
-  "idf.flashType": "JTAG"
+  "idf.flashType": "JTAG",
+  "idf.port": "COM4"
 }

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.cpp" "gnss_driver.cpp"
+    SRCS "main.cpp"  "gnss_driver.hpp" "sd_logger.hpp" "imu.hpp"
     INCLUDE_DIRS "."
-    REQUIRES driver esp_driver_gpio esp_driver_uart freertos log
+    REQUIRES driver esp_driver_gpio esp_driver_uart freertos esp_timer fatfs sdmmc vfs log
 )

@@ -2,23 +2,40 @@
 // main.cpp
 // =========================================================================
 
-#include <cstdio>
+#include "sdkconfig.h"
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "driver/uart.h"
+#include "driver/spi_common.h"
+#include "esp_log.h"
 
 #include "gnss_driver.hpp"
+#include "sd_logger.hpp"
+#include "imu.hpp"
 
-// extern "C": app_main must keep its plain C name so ESP-IDF's own C
-// startup code can find and call it
-extern "C" void app_main(void) {
+// module TX -> GPIO 16, module RX <- GPIO 17
+constexpr gnss::Pins kGnssPins = { .uart = UART_NUM_2, .rx_pin = GPIO_NUM_16, .tx_pin = GPIO_NUM_17 };
 
-    setvbuf(stdout, nullptr, _IONBF, 0);
+// CS 10, MOSI 11, CLK 12, MISO 13
+constexpr sd_log::Pins kSdPins = { .spi_host = SPI2_HOST, .mosi = GPIO_NUM_11, .miso = GPIO_NUM_13, .sclk = GPIO_NUM_12, .cs = GPIO_NUM_10 };
 
-    static gnss::GnssDriver driver;
+// CS 4, MOSI 5, CLK 7, MISO 6
+constexpr IMU::Pins kIMUPins = { .spi_host = SPI3_HOST, .mosi = GPIO_NUM_5, .miso = GPIO_NUM_6, .sclk = GPIO_NUM_7, .cs = GPIO_NUM_4 };
 
-    // START GNSS DRIVER
-    driver.begin();
 
-    vTaskDelete(nullptr);
+extern "C" void app_main(void)
+{
+
+    if (gnss::start(kGnssPins)) {
+        ESP_LOGI("main", "GNSS task started");
+    } else {
+        ESP_LOGE("main", "GNSS could not start (see above)");
+    }
+
+    if (sd_log::start(kSdPins)) {
+        ESP_LOGI("main", "SD logger task started");
+    } else {
+        ESP_LOGE("main", "SD logger could not start (see above)");
+    }
+
 }
