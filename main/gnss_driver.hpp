@@ -801,7 +801,6 @@ void gnss_task(void *){
     }
 }
 
-
 // 10. Public functions
 bool start(const Pins &pins){
     g_port = pins.uart;
@@ -831,7 +830,6 @@ bool start(const Pins &pins){
         ESP_LOGE(TAG, "Could not start the GNSS task");
         return false;
     }
-
     return true;
 }
 
@@ -840,7 +838,6 @@ bool wait_for_next_fix(Fix &fix, uint32_t timeout_ms){
         vTaskDelay(pdMS_TO_TICKS(timeout_ms));
         return false;
     }
-
     return xQueueReceive(g_queue, &fix, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 }

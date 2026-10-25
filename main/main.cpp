@@ -23,9 +23,8 @@ constexpr sd_log::Pins SdPins = { .spi_host = SPI2_HOST, .mosi = GPIO_NUM_11, .m
 constexpr IMU::Pins IMUPins = { .spi_host = SPI3_HOST, .mosi = GPIO_NUM_5, .miso = GPIO_NUM_6, .sclk = GPIO_NUM_7, .cs = GPIO_NUM_4 };
 
 
-extern "C" void app_main(void)
-{
-
+extern "C" void app_main(void){
+    
     if (gnss::start(GnssPins)) {
         ESP_LOGI("main", "GNSS task started");
     } else {
