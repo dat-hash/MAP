@@ -35,7 +35,7 @@
 
 namespace gnss {
 
-// SETTING
+    // SETTING
 constexpr const char *TAG = "GNSS";
 
 // BAUD RATE
@@ -46,9 +46,9 @@ constexpr std::array<uint32_t, 4> CANDIDATES_BAUDS = { 115200, 38400, 9600, 5760
 constexpr uint16_t MEASUREMENT_PERIOD_MS = 100; // 10 Hz
 
 // K GAIN CALCULATION:
-constexpr double q_scale = 0.3;
-constexpr double r_scale = 3.0;
-constexpr double min_gain = 0.05;
+constexpr float q_scale = 0.3;
+constexpr float r_scale = 3.0;
+constexpr float min_gain = 0.05;
 
 // DYNAMIC MODEL:
 constexpr uint8_t PORTABLE = 0;
@@ -62,35 +62,62 @@ constexpr uint8_t AIRBORNE_4G = 8;
 constexpr uint8_t WRIST = 9;
 constexpr uint8_t BIKE = 11;
 
-// TIMING
+// TIMING & TIMEOUTS
 constexpr uint32_t SETTING_ACK_TIMEOUT_MS = 500; 
 constexpr uint32_t FLASH_ACK_TIMEOUT_MS = 1500;
 constexpr uint32_t LINK_CHECK_MS = 2000;
 constexpr uint32_t LINK_LOST_MS = 5000;
 constexpr uint32_t READ_WINDOW_MS = 250;
+constexpr uint32_t BYTE_WAIT_TIMEOUT_MS = 10;
+constexpr uint32_t HEADER_TIMEOUT_MS = 100;
+constexpr uint32_t PAYLOAD_TIMEOUT_MS = 300;
+constexpr uint32_t ACK_TIMEOUT_MS = 100;
+constexpr uint32_t TASK_STARTUP_DELAY_MS = 500;
+constexpr uint32_t LOG_INTERVAL_EPOCHS = 100;
 
-// Resources
+// RESOURCES
 constexpr int UART_RX_BUFFER_BYTES = 2048;
 constexpr UBaseType_t QUEUE_LENGTH = 50; // 5s
 constexpr uint32_t TASK_STACK_BYTES = 6144;
 constexpr UBaseType_t TASK_PRIORITY = 5; // above the SD logger (3)
 
-// Rejection
-constexpr double MAX_H_ACC_M = 20.0;
-constexpr double MAX_SPEED_KMH = 25.0;
-constexpr double MIN_ALTITUDE_M = -500.0;
-constexpr double MAX_ALTITUDE_M = 9000.0;
-constexpr double MAX_ACCEL_MPS2 = 2 * 9.81; // 2G
-constexpr double MIN_GATE_M = 10.0; // gatekeep
-constexpr double GATE_SIGMAS = 5.0;
+// REJECTION & FILTERS
+constexpr float MAX_H_ACC_M = 20.0;
+constexpr float MAX_SPEED_KMH = 25.0;
+constexpr float MIN_ALTITUDE_M = -500.0;
+constexpr float MAX_ALTITUDE_M = 9000.0;
+constexpr float MAX_ACCEL_MPS2 = 2 * 9.81; // 2G
+constexpr float MIN_GATE_M = 10.0; // gatekeep
+constexpr float GATE_SIGMAS = 5.0;
 constexpr uint32_t MAX_GAP_MS = 1000;
 
-// Metres per degree of latitude (WGS84 radius x pi / 180).
-constexpr double METRES_PER_DEGREE = 111319.49;
-constexpr double PI = 3.14159265358979323846;
+// SCALING & CONVERSIONS
+constexpr float METRES_PER_DEGREE = 111319.49;
+constexpr float PI = 3.14159265358979323846;
+constexpr float SCALE_PDOP = 0.01;
+constexpr float SCALE_MM_TO_M = 0.001;
+constexpr float SCALE_MM_S_TO_KM_H = 0.0036;
+constexpr float SCALE_MM_S_TO_M_S = 0.001;
+constexpr float SCALE_COORD = 1e-7;
+constexpr float SCALE_HEADING = 1e-5;
+constexpr float MS_PER_SECOND = 1000.0;
+constexpr uint32_t SECONDS_PER_DAY = 86400;
+constexpr uint32_t SECONDS_PER_HOUR = 3600;
+constexpr uint32_t SECONDS_PER_MINUTE = 60;
+constexpr int64_t NS_PER_SECOND = 1000000000;
 
-// 2. UBX
-// B5 62 | class | id | length (2, little-endian) | payload | CK_A CK_B
+// TIME VALIDATION RANGE
+constexpr int MIN_VALID_YEAR = 1970;
+constexpr int MAX_VALID_YEAR = 2200;
+constexpr int MIN_VALID_MONTH = 1;
+constexpr int MAX_VALID_MONTH = 12;
+constexpr int MIN_VALID_DAY = 1;
+constexpr int MAX_VALID_DAY = 31;
+constexpr int MAX_VALID_HOUR = 23;
+constexpr int MAX_VALID_MINUTE = 59;
+constexpr int MAX_VALID_SECOND = 60;
+
+// 2. UBX PROTOCOL CONSTANTS
 constexpr uint8_t SYNC_1 = 0xB5;
 constexpr uint8_t SYNC_2 = 0x62;
 
@@ -107,9 +134,21 @@ constexpr uint8_t LAYER_BBR = 0x02;
 constexpr uint8_t LAYER_FLASH = 0x04;
 constexpr uint8_t RAM_AND_BBR = LAYER_RAM | LAYER_BBR;
 
+// FRAME & PARSING DEFAULTS
+constexpr size_t MAX_PAYLOAD = 256; // NAV PVT is 92 bytes
+constexpr size_t MAX_VALSET_ITEMS = 14;
+constexpr size_t MAX_VALSET_FRAME_BYTES = 128;
+constexpr size_t UBX_HEADER_SIZE = 4;
+constexpr size_t UBX_CHECKSUM_SIZE = 2;
+constexpr size_t MIN_ACK_PAYLOAD_LEN = 2;
+
+constexpr size_t KEY_SIZE_SHIFT = 28;
+constexpr uint32_t KEY_SIZE_MASK = 0x07;
+constexpr uint8_t VALID_DATE_TIME_MASK = 0x03;
+constexpr uint8_t GNSS_FIX_OK_FLAG = 0x01;
+constexpr uint8_t INVALID_LLH_FLAG = 0x01;
+
 // Configuration keys. 
-// The top hex digit of a key says how big its value
-// 1 or 2 = one byte, 3 = two bytes, 4 = four bytes
 constexpr uint32_t KEY_UART_1_BAUD = 0x40520001;
 constexpr uint32_t KEY_OUTPUT_UBX = 0x10740001;
 constexpr uint32_t KEY_OUTPUT_NMEA = 0x10740002;
@@ -117,8 +156,6 @@ constexpr uint32_t KEY_NAV_PVT_RATE = 0x20910007;
 constexpr uint32_t KEY_MEAS_RATE_MS = 0x30210001;
 constexpr uint32_t KEY_DYNAMIC_MODEL = 0x20110021;
 constexpr uint32_t KEY_L5_HEALTH_OVERRIDE = 0x10320001;
-
-constexpr size_t MAX_PAYLOAD = 256; // NAV PVT is 92 bytes
 
 struct Frame {
     uint8_t msg_class = 0;
@@ -203,40 +240,40 @@ struct Fix {
     bool fix_ok = false; // the receiver's own verdict
     uint8_t fix_type = 0;
     uint8_t satellites = 0;
-    double pdop = 0.0;
-    double h_acc_m = 0.0;
-    double v_acc_m = 0.0;
-    double speed_acc_kmh = 0.0;
+    float pdop = 0.0;
+    float h_acc_m = 0.0;
+    float v_acc_m = 0.0;
+    float speed_acc_kmh = 0.0;
 
     // Position and motion, exactly as the receiver sent them
-    double lat_deg = 0.0;
-    double lon_deg = 0.0;
-    double alt_m = 0.0;
-    double vel_n_mps = 0.0;
-    double vel_e_mps = 0.0;
-    double vel_d_mps = 0.0; // + = going down
-    double speed_kmh = 0.0;
-    double heading_deg = 0.0;
+    float lat_deg = 0.0;
+    float lon_deg = 0.0;
+    float alt_m = 0.0;
+    float vel_n_mps = 0.0;
+    float vel_e_mps = 0.0;
+    float vel_d_mps = 0.0; // + = going down
+    float speed_kmh = 0.0;
+    float heading_deg = 0.0;
 
     // verdict, and the filtered position
     Reject reject = Reject::NoFix;
-    double filt_lat_deg = 0.0;
-    double filt_lon_deg = 0.0;
-    double filt_alt_m = 0.0;
+    float filt_lat_deg = 0.0;
+    float filt_lon_deg = 0.0;
+    float filt_alt_m = 0.0;
 };
 
 // The filter's memory: the last ACCEPTED epoch.
 struct FilterState {
     bool seeded = false;
-    double lat_deg = 0.0;
-    double lon_deg = 0.0;
-    double alt_m = 0.0;
-    double vel_n_mps = 0.0;
-    double vel_e_mps = 0.0;
-    double vel_d_mps = 0.0;
+    float lat_deg = 0.0;
+    float lon_deg = 0.0;
+    float alt_m = 0.0;
+    float vel_n_mps = 0.0;
+    float vel_e_mps = 0.0;
+    float vel_d_mps = 0.0;
     uint32_t itow_ms = 0; // receiver time of that epoch
-    double var_h = 0.0;
-    double var_v = 0.0;
+    float var_h = 0.0;
+    float var_v = 0.0;
 };
 
 // module own variable
@@ -275,7 +312,7 @@ bool read_exact(uint8_t *buffer, size_t count, uint32_t timeout_ms){
 
 bool read_frame(Frame &frame, uint32_t timeout_ms){
     // Wait at least one tick per byte, or the loop below would spin.
-    const TickType_t byte_wait = std::max<TickType_t>(1, pdMS_TO_TICKS(10));
+    const TickType_t byte_wait = std::max<TickType_t>(1, pdMS_TO_TICKS(BYTE_WAIT_TIMEOUT_MS));
     const uint32_t start = now_ms();
     uint8_t previous = 0;
 
@@ -293,8 +330,8 @@ bool read_frame(Frame &frame, uint32_t timeout_ms){
             continue;
         }
 
-        uint8_t header[4] = {};
-        if (!read_exact(header, sizeof(header), 100)) {
+        uint8_t header[UBX_HEADER_SIZE] = {};
+        if (!read_exact(header, sizeof(header), HEADER_TIMEOUT_MS)) {
             continue;
         }
 
@@ -307,9 +344,9 @@ bool read_frame(Frame &frame, uint32_t timeout_ms){
             continue;
         }
 
-        uint8_t received_ck[2] = {};
-        if (!read_exact(frame.payload.data(), frame.length, 300) ||
-            !read_exact(received_ck, sizeof(received_ck), 100)) {
+        uint8_t received_ck[UBX_CHECKSUM_SIZE] = {};
+        if (!read_exact(frame.payload.data(), frame.length, PAYLOAD_TIMEOUT_MS) ||
+            !read_exact(received_ck, sizeof(received_ck), ACK_TIMEOUT_MS)) {
             previous = 0;
             continue;
         }
@@ -330,7 +367,6 @@ bool read_frame(Frame &frame, uint32_t timeout_ms){
     return false;
 }
 
-
 // 5. Sending configuration
 struct KeyValue {
     uint32_t key;
@@ -341,7 +377,7 @@ enum class Reply { Ack, Nak, None }; // ubx ack nak answer
 
 // Bytes taken by a key's value, from the size code in the key's top digit.
 size_t value_size(uint32_t key){
-    uint32_t size_code = (key >> 28) & 0x07;
+    uint32_t size_code = (key >> KEY_SIZE_SHIFT) & KEY_SIZE_MASK;
 
     if (size_code == 4) {
         return 4;
@@ -354,9 +390,9 @@ size_t value_size(uint32_t key){
 
 void send_valset(uint8_t layers, std::initializer_list<KeyValue> items){
     // 6 header + 4 VALSET header + up to 8 per item + 2 checksum.
-    std::array<uint8_t, 128> frame = {};
+    std::array<uint8_t, MAX_VALSET_FRAME_BYTES> frame = {};
 
-    if (items.size() > 14) {
+    if (items.size() > MAX_VALSET_ITEMS) {
         ESP_LOGE(TAG, "BUG: too many keys in one CFG-VALSET");
         return;
     }
@@ -411,8 +447,8 @@ Reply wait_for_ack(uint32_t timeout_ms){
             continue;
         }
 
-        bool answers_valset = (frame.msg_class == CLASS_ACK) && (frame.length >= 2) &&
-                            (frame.payload[0] == CLASS_CFG) && (frame.payload[1] == ID_VALSET);
+        bool answers_valset = (frame.msg_class == CLASS_ACK) && (frame.length >= MIN_ACK_PAYLOAD_LEN) &&
+                              (frame.payload[0] == CLASS_CFG) && (frame.payload[1] == ID_VALSET);
 
         if (answers_valset && frame.msg_id == ID_ACK) {
             return Reply::Ack;
@@ -481,7 +517,7 @@ bool find_module(){
 
         if (reply == Reply::Nak) {
             ESP_LOGE(TAG, "The module REFUSED the settings: probably a u-blox M8 or older, "
-                            "which has no CFG-VALSET");
+                          "which has no CFG-VALSET");
             return false;
         }
 
@@ -531,7 +567,7 @@ int64_t utc_to_unix_ms(const NavPvt &pvt){
     constexpr std::array<int, 12> DAYS_BEFORE_MONTH = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
 
     int64_t days = 0;
-    for (int y = 1970; y < pvt.year; y++) {
+    for (int y = MIN_VALID_YEAR; y < pvt.year; y++) {
         if (is_leap_year(y)) {
             days += 366;
         } else {
@@ -545,7 +581,7 @@ int64_t utc_to_unix_ms(const NavPvt &pvt){
     }
     days += pvt.day - 1;
 
-    int64_t seconds = days * 86400 + pvt.hour * 3600 + pvt.min * 60 + pvt.sec;
+    int64_t seconds = days * SECONDS_PER_DAY + pvt.hour * SECONDS_PER_HOUR + pvt.min * SECONDS_PER_MINUTE + pvt.sec;
     return seconds * 1000 + std::llround(pvt.nano / 1000000.0);
 }
 
@@ -560,10 +596,12 @@ bool decode_nav_pvt(const Frame &frame, Fix &fix){
 
     // TIME RANGE CHECK
     fix.itow_ms = pvt.iTOW;
-    bool time_flags_ok = (pvt.valid & 0x03) == 0x03;
-    bool in_range = pvt.year >= 1970 && pvt.year <= 2200 && pvt.month >= 1 && pvt.month <= 12 &&
-                    pvt.day >= 1 && pvt.day <= 31 && pvt.hour <= 23 && pvt.min <= 59 && pvt.sec <= 60 &&
-                    pvt.nano > -1000000000 && pvt.nano < 1000000000;
+    bool time_flags_ok = (pvt.valid & VALID_DATE_TIME_MASK) == VALID_DATE_TIME_MASK;
+    bool in_range = pvt.year >= MIN_VALID_YEAR && pvt.year <= MAX_VALID_YEAR && 
+                    pvt.month >= MIN_VALID_MONTH && pvt.month <= MAX_VALID_MONTH &&
+                    pvt.day >= MIN_VALID_DAY && pvt.day <= MAX_VALID_DAY && 
+                    pvt.hour <= MAX_VALID_HOUR && pvt.min <= MAX_VALID_MINUTE && pvt.sec <= MAX_VALID_SECOND &&
+                    pvt.nano > -NS_PER_SECOND && pvt.nano < NS_PER_SECOND;
 
     if (time_flags_ok && in_range) {
         fix.utc_valid = true;
@@ -573,29 +611,28 @@ bool decode_nav_pvt(const Frame &frame, Fix &fix){
     // Quality. Usable = gnssFixOK, not invalidLlh, and a type with a position.
     fix.fix_type = pvt.fixType;
     fix.satellites = pvt.numSV;
-    bool gnss_fix_ok = (pvt.flags & 0x01) != 0;
-    bool invalid_llh = (pvt.flags3 & 0x01) != 0;
+    bool gnss_fix_ok = (pvt.flags & GNSS_FIX_OK_FLAG) != 0;
+    bool invalid_llh = (pvt.flags3 & INVALID_LLH_FLAG) != 0;
     bool type_position = pvt.fixType >= 2 && pvt.fixType <= 4;
     fix.fix_ok = gnss_fix_ok && !invalid_llh && type_position;
 
-    fix.pdop = pvt.pDOP * 0.01;
-    fix.h_acc_m = pvt.hAcc * 0.001;
-    fix.v_acc_m = pvt.vAcc * 0.001;
-    fix.speed_acc_kmh = pvt.sAcc * 0.0036; // mm/s -> km/h
+    fix.pdop = pvt.pDOP * SCALE_PDOP;
+    fix.h_acc_m = pvt.hAcc * SCALE_MM_TO_M;
+    fix.v_acc_m = pvt.vAcc * SCALE_MM_TO_M;
+    fix.speed_acc_kmh = pvt.sAcc * SCALE_MM_S_TO_KM_H; // mm/s -> km/h
 
     // Position and motion
-    fix.lat_deg = pvt.lat * 1e-7;
-    fix.lon_deg = pvt.lon * 1e-7;
-    fix.alt_m = pvt.hMSL * 0.001;
-    fix.vel_n_mps = pvt.velN * 0.001;
-    fix.vel_e_mps = pvt.velE * 0.001;
-    fix.vel_d_mps = pvt.velD * 0.001;
-    fix.speed_kmh = pvt.gSpeed * 0.0036;
-    fix.heading_deg = pvt.headMot * 1e-5;
+    fix.lat_deg = pvt.lat * SCALE_COORD;
+    fix.lon_deg = pvt.lon * SCALE_COORD;
+    fix.alt_m = pvt.hMSL * SCALE_MM_TO_M;
+    fix.vel_n_mps = pvt.velN * SCALE_MM_S_TO_M_S;
+    fix.vel_e_mps = pvt.velE * SCALE_MM_S_TO_M_S;
+    fix.vel_d_mps = pvt.velD * SCALE_MM_S_TO_M_S;
+    fix.speed_kmh = pvt.gSpeed * SCALE_MM_S_TO_KM_H;
+    fix.heading_deg = pvt.headMot * SCALE_HEADING;
 
     return true;
 }
-
 
 // 8. Rejection + filter
 Reject basic_check(const Fix &fix){
@@ -640,38 +677,38 @@ void check_and_filter(Fix &fix){
         return;
     }
 
-    double dt = dt_ms / 1000.0;
+    float dt = dt_ms / MS_PER_SECOND;
 
     // ACCEL CHECK (HORIZONTAL)
-    double accel = std::hypot(fix.vel_n_mps - g_filter.vel_n_mps, fix.vel_e_mps - g_filter.vel_e_mps) / dt;
+    float accel = std::hypot(fix.vel_n_mps - g_filter.vel_n_mps, fix.vel_e_mps - g_filter.vel_e_mps) / dt;
     if (accel > MAX_ACCEL_MPS2) {
         fix.reject = Reject::TooMuchAccel;
         return;
     }
 
     // PREDICT PHASE
-    double metres_per_deg_lon = METRES_PER_DEGREE * std::cos(g_filter.lat_deg * PI / 180.0);
-    double delta_north_m = 0.5 * (fix.vel_n_mps + g_filter.vel_n_mps) * dt;
-    double delta_east_m = 0.5 * (fix.vel_e_mps + g_filter.vel_e_mps) * dt;
-    double delta_down_m = 0.5 * (fix.vel_d_mps + g_filter.vel_d_mps) * dt;
+    float metres_per_deg_lon = METRES_PER_DEGREE * std::cos(g_filter.lat_deg * PI / 180.0);
+    float delta_north_m = 0.5 * (fix.vel_n_mps + g_filter.vel_n_mps) * dt;
+    float delta_east_m = 0.5 * (fix.vel_e_mps + g_filter.vel_e_mps) * dt;
+    float delta_down_m = 0.5 * (fix.vel_d_mps + g_filter.vel_d_mps) * dt;
 
-    double pred_lat = g_filter.lat_deg + delta_north_m / METRES_PER_DEGREE;
-    double pred_lon = g_filter.lon_deg + delta_east_m / metres_per_deg_lon;
-    double pred_alt = g_filter.alt_m - delta_down_m;
+    float pred_lat = g_filter.lat_deg + delta_north_m / METRES_PER_DEGREE;
+    float pred_lon = g_filter.lon_deg + delta_east_m / metres_per_deg_lon;
+    float pred_alt = g_filter.alt_m - delta_down_m;
 
     // STATISTIC CALC
-    double speed_acc_mps = fix.speed_acc_kmh / 3.6;
-    double q = (q_scale * speed_acc_mps * dt) * (q_scale * speed_acc_mps * dt);
-    double r_h = (fix.h_acc_m * r_scale) * (fix.h_acc_m * r_scale);
-    double r_v = (fix.v_acc_m * r_scale) * (fix.v_acc_m * r_scale);
-    double M_h = g_filter.var_h + q;
-    double M_v = g_filter.var_v + q;
+    float speed_acc_mps = fix.speed_acc_kmh / 3.6;
+    float q = (q_scale * speed_acc_mps * dt) * (q_scale * speed_acc_mps * dt);
+    float r_h = (fix.h_acc_m * r_scale) * (fix.h_acc_m * r_scale);
+    float r_v = (fix.v_acc_m * r_scale) * (fix.v_acc_m * r_scale);
+    float M_h = g_filter.var_h + q;
+    float M_v = g_filter.var_v + q;
 
     // JUMP CHECK
-    double miss_north_m = (fix.lat_deg - pred_lat) * METRES_PER_DEGREE;
-    double miss_east_m = (fix.lon_deg - pred_lon) * metres_per_deg_lon;
-    double miss_m = std::hypot(miss_north_m, miss_east_m);
-    double gate_m = std::max<double>(MIN_GATE_M, GATE_SIGMAS * std::sqrt(M_h + r_h));
+    float miss_north_m = (fix.lat_deg - pred_lat) * METRES_PER_DEGREE;
+    float miss_east_m = (fix.lon_deg - pred_lon) * metres_per_deg_lon;
+    float miss_m = std::hypot(miss_north_m, miss_east_m);
+    float gate_m = std::max<float>(MIN_GATE_M, GATE_SIGMAS * std::sqrt(M_h + r_h));
 
     if (miss_m > gate_m) {
         fix.reject = Reject::Jump;
@@ -679,8 +716,8 @@ void check_and_filter(Fix &fix){
     }
 
     // K GAIN CALC
-    double k_gain_h = M_h / (M_h + r_h);
-    double k_gain_v = M_v / (M_v + r_v);
+    float k_gain_h = M_h / (M_h + r_h);
+    float k_gain_v = M_v / (M_v + r_v);
 
     // BLENDING
     g_filter.lat_deg = pred_lat + k_gain_h * (fix.lat_deg - pred_lat);
@@ -724,7 +761,7 @@ void publish(const Fix &fix){
     }
     g_had_fix = fix.fix_ok;
 
-    if (g_epochs % 100 == 0) {
+    if (g_epochs % LOG_INTERVAL_EPOCHS == 0) {
         ESP_LOGI(TAG, "%u sats | hAcc %.2f m | %.1f km/h | rejected %" PRIu32 "/100 | ""bad checksums %" PRIu32 " | dropped %" PRIu32,
                  static_cast<unsigned>(fix.satellites), fix.h_acc_m, fix.speed_kmh, g_rejected, g_bad_checksums, g_dropped);
         g_rejected = 0;
@@ -758,7 +795,7 @@ void gnss_cycle(){
 }
 
 void gnss_task(void *){
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(TASK_STARTUP_DELAY_MS));
     while (true) {
         gnss_cycle();
     }

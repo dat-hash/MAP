@@ -19,6 +19,7 @@
 #include "sdmmc_cmd.h"
 
 #include "gnss_driver.hpp"
+#include "imu.hpp"
 
 namespace sd_log {
 
@@ -52,6 +53,11 @@ char g_name[24] = {}; // "RIDE0007.CSV"
 char g_buffer[4096]; // rows collect here between syncs
 uint32_t g_rows = 0;
 uint32_t g_mount_fails = 0;
+
+FILE *g_imu_file = nullptr; // IMU0007.CSV, opened and closed together with g_file
+char g_imu_name[24] = {};
+char g_imu_buffer[4096]; // own buffer: setvbuf can't share one between two files
+uint32_t g_imu_rows = 0;
 
 bool mount(){
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
@@ -120,7 +126,15 @@ int give_next_file_version_number(){
 }
 
 bool sync_data_from_controller_to_card(){
-    return fflush(g_file) == 0 && fsync(fileno(g_file)) == 0;
+    if (fflush(g_file) != 0 || fsync(fileno(g_file)) != 0) {
+        return false;
+    }
+    if (g_imu_file != nullptr) {
+        if (fflush(g_imu_file) != 0 || fsync(fileno(g_imu_file)) != 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool open_log(){
@@ -150,16 +164,39 @@ bool open_log(){
           "speed_kmh,speed_acc_kmh,heading_deg,vel_n_mps,vel_e_mps,vel_d_mps,pdop,"
           "reject,filt_lat_deg,filt_lon_deg,filt_alt_m\n", g_file);
 
-    if (!sync_data_from_controller_to_card()) {
-        ESP_LOGE(TAG, "Could not write to %s", path);
+    // IMU file with the same number, so the pair is obvious on the card
+    snprintf(g_imu_name, sizeof(g_imu_name), "IMU%04d.CSV", file_number);
+
+    char imu_path[64];
+    snprintf(imu_path, sizeof(imu_path), "%s/%s", MOUNT_POINT, g_imu_name);
+
+    g_imu_file = fopen(imu_path, "a");
+    if (g_imu_file == nullptr) {
+        ESP_LOGE(TAG, "Could not create %s (%s)", imu_path, strerror(errno));
         fclose(g_file);
         g_file = nullptr;
         remove(path);
         return false;
     }
 
+    setvbuf(g_imu_file, g_imu_buffer, _IOFBF, sizeof(g_imu_buffer)); // before the first write
+
+    fputs("t_us,gx_rps,gy_rps,gz_rps,ax_mps2,ay_mps2,az_mps2,temp_c,saturated\n", g_imu_file);
+
+    if (!sync_data_from_controller_to_card()) {
+        ESP_LOGE(TAG, "Could not write to %s / %s", path, imu_path);
+        fclose(g_file);
+        g_file = nullptr;
+        fclose(g_imu_file);
+        g_imu_file = nullptr;
+        remove(path);
+        remove(imu_path);
+        return false;
+    }
+
     g_rows = 0;
-    ESP_LOGI(TAG, "Logging to %s", g_name);
+    g_imu_rows = 0;
+    ESP_LOGI(TAG, "Logging to %s + %s", g_name, g_imu_name);
     return true;
 }
 
@@ -170,12 +207,16 @@ void close_log(const char *reason){
         fclose(g_file);
         g_file = nullptr;
     }
+    if (g_imu_file != nullptr) {
+        fclose(g_imu_file);
+        g_imu_file = nullptr;
+    }
     unmount();
 }
 
 // 5. Rows
 // One epoch = one line in the RAM buffer. False only if the write failed.
-bool write_row(const gnss::Fix &fix){
+bool write_gnss_row(const gnss::Fix &fix){
     char utc[32] = ""; // stays empty until the receiver knows the time
 
     if (fix.utc_valid) {
@@ -208,6 +249,24 @@ bool write_row(const gnss::Fix &fix){
     return true;
 }
 
+// One IMU sample = one line. Gyro 7 decimals, accel 5: the sensor's smallest step
+// is 0.0000109 rad/s and 0.0003 m/s^2, fewer decimals would round real data away.
+bool write_imu_row(const IMU::Sample &sample){
+    int written = fprintf(g_imu_file,
+        "%" PRId64 ",%.7f,%.7f,%.7f,%.5f,%.5f,%.5f,%.2f,%d\n",
+        sample.timestamp,
+        sample.gyro_rad_per_s[0], sample.gyro_rad_per_s[1], sample.gyro_rad_per_s[2],
+        sample.accel_m_per_s2[0], sample.accel_m_per_s2[1], sample.accel_m_per_s2[2],
+        sample.temp, sample.saturated ? 1 : 0);
+
+    if (written < 0) {
+        return false;
+    }
+
+    g_imu_rows++;
+    return true;
+}
+
 // 6. The task
 uint32_t try_start(){
     if (g_card == nullptr && !mount()) {
@@ -229,9 +288,10 @@ void logger_task(void *){
     uint32_t last_note_ms = gnss::now_ms();
 
     while (true) {
-
-        gnss::Fix fix;
-        bool have_epoch = gnss::wait_for_next_fix(fix, 1000);
+        // Block on the FAST stream (IMU, every 5 ms), 20 ms at most so the loop
+        // keeps turning if the IMU is dead. Then empty both queues without waiting.
+        IMU::Sample sample;
+        bool have_sample = IMU::imu_wait_for_sample(sample, 20);
         uint32_t now = gnss::now_ms();
 
         if (g_file == nullptr && (now - last_try_ms) >= retry_ms) {
@@ -240,8 +300,19 @@ void logger_task(void *){
             last_sync_ms = now;
         }
 
-        if (g_file != nullptr && have_epoch && !write_row(fix)) {
-            close_log("write failed (card pulled out or full?)");
+        // Write every IMU sample waiting (after an SD stall that can be dozens)
+        while (have_sample) {
+            if (g_imu_file != nullptr && !write_imu_row(sample)) {
+                close_log("IMU write failed (card pulled out or full?)");
+            }
+            have_sample = IMU::imu_wait_for_sample(sample, 0);
+        }
+
+        gnss::Fix fix;
+        while (gnss::wait_for_next_fix(fix, 0)) {
+            if (g_file != nullptr && !write_gnss_row(fix)) {
+                close_log("write failed (card pulled out or full?)");
+            }
         }
 
         if (g_file != nullptr && (now - last_sync_ms) >= SYNC_EVERY_S) {
@@ -253,7 +324,10 @@ void logger_task(void *){
 
         if (g_file != nullptr && (now - last_note_ms) >= STATUS_PER_MS) {
             last_note_ms = now;
-            ESP_LOGI(TAG, "%s: %" PRIu32 " rows", g_name, g_rows);
+            ESP_LOGI(TAG, "%s: %" PRIu32 " rows | %s: %" PRIu32 " rows, dropped %" PRIu32 " late %" PRIu32 " bad %" PRIu32 " restarts %" PRIu32,
+                     g_name, g_rows, g_imu_name, g_imu_rows,
+                     IMU::imu_samples_dropped.load(), IMU::imu_samples_late.load(),
+                     IMU::imu_samples_bad.load(), IMU::imu_restarts.load());
         }
     }
 }
@@ -284,11 +358,4 @@ bool start(const Pins &pins){
 
     return true;
 }
-
 }
-
-
-
-
-
-
