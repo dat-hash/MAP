@@ -35,7 +35,7 @@
 
 namespace gnss {
 
-    // SETTING
+// SETTING
 constexpr const char *TAG = "GNSS";
 
 // BAUD RATE
@@ -843,5 +843,4 @@ bool wait_for_next_fix(Fix &fix, uint32_t timeout_ms){
 
     return xQueueReceive(g_queue, &fix, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
-
 }

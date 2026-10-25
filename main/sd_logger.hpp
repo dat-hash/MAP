@@ -19,7 +19,7 @@
 #include "sdmmc_cmd.h"
 
 #include "gnss_driver.hpp"
-#include "imu.hpp"
+#include "imu_driver.hpp"
 
 namespace sd_log {
 
@@ -250,7 +250,7 @@ bool write_gnss_row(const gnss::Fix &fix){
 }
 
 // One IMU sample = one line. Gyro 7 decimals, accel 5: the sensor's smallest step
-// is 0.0000109 rad/s and 0.0003 m/s^2, fewer decimals would round real data away.
+// is 0.0000109 rad/s and 0.0003 m/s^2
 bool write_imu_row(const IMU::Sample &sample){
     int written = fprintf(g_imu_file,
         "%" PRId64 ",%.7f,%.7f,%.7f,%.5f,%.5f,%.5f,%.2f,%d\n",
@@ -355,7 +355,6 @@ bool start(const Pins &pins){
         ESP_LOGE(TAG, "Could not start the logger task");
         return false;
     }
-
     return true;
 }
 }

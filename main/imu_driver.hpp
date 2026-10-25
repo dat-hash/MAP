@@ -12,8 +12,6 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 
-#include "gnss_driver.hpp"
-
 namespace IMU{
 
 constexpr const char *TAG = "IMU";
@@ -113,8 +111,6 @@ constexpr uint16_t IMU_VAL_SOFT_RESET = 0b1010;
 // ---- Expected values ----
 constexpr int IMU_STATUS_REG_COUNT = 10;
 constexpr uint16_t IMU_STATUS_HEALTHY = 0xFFFF; // every flag 1 = OK (7.3)
-constexpr uint16_t IMU_ASIC_ID_EXPECTED = 0x0021; // NOT in the datasheet (from PX4): log yours and replace
-constexpr uint16_t IMU_COMP_ID_EXPECTED = 0x0023; // same
  
 // ---- Scaling (3.4, 3.5, 3.8, 7.2) ----
 // Sensitivities are only valid for DYN1, i.e. with IMU_VAL_RATE_CTRL / IMU_VAL_ACC12_CTRL above.

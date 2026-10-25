@@ -11,7 +11,7 @@
 
 #include "gnss_driver.hpp"
 #include "sd_logger.hpp"
-#include "imu.hpp"
+#include "imu_driver.hpp"
 
 // module TX -> GPIO 16, module RX <- GPIO 17
 constexpr gnss::Pins GnssPins = { .uart = UART_NUM_2, .rx_pin = GPIO_NUM_16, .tx_pin = GPIO_NUM_17 };
