@@ -14,7 +14,8 @@
 
 namespace IMU{
 
-constexpr const char *TAG = "IMU";
+constexpr const char *TAG = " IMU";
+constexpr const char *NO_TAG = "    ";
 
 struct Pins {
     spi_host_device_t spi_host;
@@ -33,7 +34,7 @@ struct Sample {
 };
 
 // ---- SPI (3.12, 6.1) ----
-constexpr int IMU_SPI_CLOCK_HZ = 5000000; // chip allows 0.095 to 10.5 MHz; use 1 MHz on jumper wires
+constexpr int IMU_SPI_CLOCK_HZ = 1000000; // chip allows 0.095 to 10.5 MHz use 1 MHz on jumper wires, if not use 5MHz
 constexpr uint8_t IMU_SPI_MODE = 0; // CPOL 0, CPHA 0
 constexpr int IMU_FRAME_BYTES = 6; // 48 bits
  
@@ -132,6 +133,7 @@ constexpr uint32_t IMU_CS_GAP_AFTER_WRITE_NS = 750; // CS high between frames; E
 constexpr uint32_t IMU_CS_GAP_AFTER_READ_NS = 450;
 constexpr int64_t IMU_SAMPLE_PERIOD_US = 5000; // 200 Hz
 constexpr uint32_t IMU_WAKE_TIMEOUT_MS = 50; // task not woken this long = timer is broken
+constexpr int64_t IMU_SUMMARY_EVERY_US = 10000000; // one summary line every 10 s
  
 // ---- Policy ----
 constexpr int IMU_BAD_IN_A_ROW_LIMIT = 10; // then run start_up() again
@@ -166,13 +168,13 @@ const RegisterSetting IMU_SETTINGS[] = {
 
 
 uint8_t crc8 (uint64_t message) {
-    uint8_t crc= 0b1111'1111;
-    uint16_t polynomial =  0b00101111;
+    uint8_t crc= IMU_CRC_INIT;
+    uint16_t polynomial = IMU_CRC_POLY;
     uint64_t padded = message << 8;
 
     for (int i = 47; i >= 0; i--) {
-        uint8_t incoming_bit = (padded >> (i)) & 0b0001; // pull till the newest bit then isolate it
-        uint8_t fall_off_bit = crc & 0b1000'0000;
+        uint8_t incoming_bit = (padded >> (i)) & 0x1; // pull till the newest bit then isolate it
+        uint8_t fall_off_bit = crc & 0x80;
         crc = ((crc << 1) | incoming_bit);
         if (fall_off_bit != 0) {
             crc ^= polynomial;
@@ -195,7 +197,7 @@ uint64_t make_frame(uint8_t register_address, bool write, uint16_t value) {
 }
 
 
-bool reply_check(uint64_t reply, bool &saturated){
+bool reply_check(uint64_t reply, bool &saturated, bool init_ok = false){
     uint8_t crc_received = static_cast<uint8_t>(reply & IMU_MASK_CRC);
     uint8_t crc_expected = crc8(reply >> IMU_FRAME_CRC_BITS);
 
@@ -203,17 +205,23 @@ bool reply_check(uint64_t reply, bool &saturated){
         return false;   // crc fail
     }
 
-    uint64_t error_bits = (reply >> IMU_REPLY_CE_SHIFT) & IMU_MASK_ERRORS;
-    if (error_bits != 0) {
-        return false;
+    uint8_t command_error = static_cast<uint8_t>((reply >> IMU_REPLY_CE_SHIFT) & 0x1); // bit 35 esp frame is invalid
+    uint8_t internal_error = static_cast<uint8_t>((reply >> (IMU_REPLY_CE_SHIFT + 1)) & 0x1); // bit 36: IDS
+    if (command_error != 0) {
+        return false; // the chip dont understand the request
+    }
+    if (internal_error != 0 && !init_ok) {
+        return false; // after start up IDS means a real error while during start up it just mirrors INIT
     }
 
     uint8_t status = static_cast<uint8_t>((reply >> IMU_REPLY_STATUS_SHIFT) & IMU_MASK_STATUS);
     if (status == IMU_STATUS_OK) {
         return true;
     } else if (status == IMU_STATUS_SATURATED) {
-        saturated = true; // value is real but clipped keep it but flag it
+        saturated = true; // value is real but clipped
         return true;
+    } else if (status == IMU_STATUS_INIT && init_ok) {
+        return true; // before EOI every reply says INIT
     } else {
         return false; // IMU_STATUS_ERROR or IMU_STATUS_INIT
     }
@@ -223,7 +231,7 @@ int32_t data_20bit_extract (uint64_t reply) {
     uint32_t data_raw = static_cast<uint32_t>((reply >> IMU_FRAME_CRC_BITS) & IMU_MASK_DATA20); // pull out data 20 bit
     // check if negative
     if ((data_raw & IMU_DATA20_SIGN_BIT) != 0) {
-        data_raw |= IMU_DATA20_SIGN_EXTEND; // flood bit 20 to bit 32 with 1 (now negative)
+        data_raw |= IMU_DATA20_SIGN_EXTEND; // flood bit 20 to bit 32 with 1 -> now negative
     }
     return static_cast<int32_t>(data_raw);
 }
@@ -235,7 +243,6 @@ uint64_t transfer(uint64_t frame)
     for (int i = 0; i < 6; i++) {
         tx[i] = static_cast<uint8_t>(frame >> (40 - 8 * i));
     }
-
     spi_transaction_t transaction = {}; // set struct up
     transaction.length = 48;
     transaction.tx_buffer = tx;
@@ -253,15 +260,17 @@ void write_register(uint8_t register_address, uint16_t value){
     transfer(make_frame(register_address,true,value));
 }
 
-bool read_register (uint8_t register_address, uint16_t &value_out){
+bool read_register (uint8_t register_address, uint16_t &value_out, bool init_ok = false){
     bool saturated = false;
     transfer(make_frame(register_address,false,0)); // reply garbage
     uint64_t reply = transfer(make_frame(register_address,false,0));
 
-    if(!reply_check(reply,saturated)){
+    if(!reply_check(reply,saturated,init_ok)){
+        ESP_LOGW(TAG, "read 0x%02X: reply_check failed, raw 0x%012llX", register_address, reply);
         return false;
     }
     if((static_cast<uint8_t>(((reply >> IMU_REPLY_ADDR_SHIFT) & IMU_MASK_ADDR))) != register_address ){
+        ESP_LOGW(TAG, "read 0x%02X: wrong address, raw 0x%012llX", register_address, reply);
         return false;
     }
     value_out = static_cast<uint16_t>(((reply >> IMU_FRAME_DATA_SHIFT) & IMU_MASK_DATA16));
@@ -277,8 +286,8 @@ bool all_status_ok(){
         if (!read_register(register_address,value_extracted)) {
             ESP_LOGW(TAG,"status 0x%02X: read fail",register_address);
             ok = false;
-        }
-        else if(value_extracted != IMU_STATUS_HEALTHY){
+        } 
+        else if (value_extracted != IMU_STATUS_HEALTHY){
             ESP_LOGW(TAG,"status 0x%02X = 0x%04X: unhealthy",register_address,value_extracted);
             ok = false;
         }
@@ -289,12 +298,12 @@ bool all_status_ok(){
 bool sys_test_ok(){
     uint16_t answer = 0;
     write_register(SYS_TEST, 0xA55A); // test 1010 0101 0101 1010
-    read_register(SYS_TEST, answer);
+    read_register(SYS_TEST, answer, true);
     if(answer != 0xA55A){
         return false;
     }
     write_register(SYS_TEST, 0x5AA5); // test 0101 1010 1010 0101 (alternate to make sure)
-    read_register(SYS_TEST, answer);
+    read_register(SYS_TEST, answer, true);
     if(answer != 0x5AA5){
         return false;
     }
@@ -314,8 +323,8 @@ bool read_sample(Sample &sample_out){
         if (i < 6) {
             next = request_order[i + 1];
         }
-        else{
-            next = request_order[6]; // last frame: ask TEMP again
+        else {
+            next = request_order[6]; // last frame: ask TEMPERATURE again
         }
         replies[i] = transfer(make_frame(next, false, 0));
     }
@@ -325,12 +334,12 @@ bool read_sample(Sample &sample_out){
         if (!reply_check(replies[i], sample_out.saturated)) {
             return false;
         }
-        if((static_cast<uint8_t>(((replies[i] >> IMU_REPLY_ADDR_SHIFT) & IMU_MASK_ADDR))) != request_order[i] ){
+        if ((static_cast<uint8_t>(((replies[i] >> IMU_REPLY_ADDR_SHIFT) & IMU_MASK_ADDR))) != request_order[i] ){
             return false;
         }
     }
 
-    // from datasheets the murata will say X = Forward, Y = left and Z = Up
+    // from datasheets the murata say X = Forward, Y = left and Z = Up
     // but we want X = forward, Y = right and Z = down (g supposed to be down not up)
     for (int i = 0; i < 3; i++) {
         sample_out.gyro_rad_per_s[i] = IMU_AXIS_SIGN[i] * data_20bit_extract(replies[i]) / IMU_GYRO_LSB_PER_DPS * IMU_DEG_TO_RAD;
@@ -356,8 +365,8 @@ bool start_up(){
     }
 
     uint16_t ASIC_ID = 0, COMP_ID = 0;
-    read_register(IMU_REG_ASIC_ID,ASIC_ID);
-    read_register(IMU_REG_COMP_ID,COMP_ID);
+    read_register(IMU_REG_ASIC_ID,ASIC_ID, true);
+    read_register(IMU_REG_COMP_ID,COMP_ID, true);
     ESP_LOGI(TAG, "ASIC_ID 0x%04X COMP_ID 0x%04X ", ASIC_ID,COMP_ID); // log ID
 
     for (const RegisterSetting &reg : IMU_SETTINGS) {
@@ -370,7 +379,7 @@ bool start_up(){
     write_register(IMU_REG_MODE, IMU_VAL_MODE_EN_EOI);
     esp_rom_delay_us(IMU_EOI_SETTLE_MS * 1000); // 3ms wait, must be BEFORE the status check
 
-    all_status_ok(); // datasheet: read status twice after EOI, first one clears latched flags
+    all_status_ok(); // read status twice after EOI, first one clears latched flags
     if (!all_status_ok()) {
         ESP_LOGE(TAG, "Status not healthy after EOI (see warnings above)");
         return false;
@@ -391,11 +400,11 @@ bool start_up(){
 }
 
 bool start_up_with_retries(){
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        for (int attempt = 1; attempt <= 10; attempt++) {
         if (start_up()) {
             return true;
         }
-        ESP_LOGW(TAG, "start_up attempt %d of 3 failed", attempt);
+        ESP_LOGW(TAG, "start_up attempt %d of 10 failed", attempt);
         if (attempt < 3) {
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
@@ -413,13 +422,15 @@ void imu_timer_callback(void *argument)
 // task
 void imu_task(void *){
     if (!start_up_with_retries()) {
-        ESP_LOGE(TAG, "IMU dead after 3 attempts - task stopping");
+        ESP_LOGE(TAG, "IMU dead after 10 attempts - task stopping");
         vTaskDelete(nullptr);
     }
     esp_timer_start_periodic(imu_timer_handle,IMU_SAMPLE_PERIOD_US);
     
     uint8_t bad_in_a_row = 0;
     bool timeout_logged = false;
+    int64_t last_summary_us = esp_timer_get_time();
+    Sample last_good_sample = {};
     while (true) {
         uint32_t wakeups = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(IMU_WAKE_TIMEOUT_MS));
         if (wakeups == 0) {
@@ -432,16 +443,18 @@ void imu_task(void *){
         timeout_logged = false;
 
         if (wakeups > 1) {
-            imu_samples_late += wakeups - 1; // We were late and missed some ticks
+            imu_samples_late += wakeups - 1; // the sample is late late and missed some ticks
         }
         Sample sample;
         if (read_sample(sample)) {
             bad_in_a_row = 0;
+            last_good_sample = sample;
             imu_samples_read++;
             if (xQueueSend(imu_queue, &sample, 0) != pdTRUE) {
                 imu_samples_dropped++;
             }
-        } else {
+        } 
+        else {
             imu_samples_bad++;
             bad_in_a_row++;
         }
@@ -458,6 +471,20 @@ void imu_task(void *){
             bad_in_a_row = 0;
             ulTaskNotifyTake(pdTRUE, 0);
             esp_timer_start_periodic(imu_timer_handle, IMU_SAMPLE_PERIOD_US);
+        }
+
+        int64_t now_us = esp_timer_get_time();
+        if (now_us - last_summary_us >= IMU_SUMMARY_EVERY_US) {
+            uint32_t reads_now = imu_samples_read.load();
+
+            ESP_LOGI(TAG, "read %" PRIu32 " | bad %" PRIu32 " | late %" PRIu32 " | dropped %" PRIu32 " | restarts %" PRIu32,
+                    reads_now, imu_samples_bad.load(), imu_samples_late.load(), imu_samples_dropped.load(), imu_restarts.load());
+
+            ESP_LOGI(NO_TAG, "GYRO XYZ %+.3f / %+.3f / %+.3f rad/s | ACCEL XYZ %+.2f / %+.2f / %+.2f m/s2 | TEMP: %.1f C%s",
+                    last_good_sample.gyro_rad_per_s[0], last_good_sample.gyro_rad_per_s[1], last_good_sample.gyro_rad_per_s[2],
+                    last_good_sample.accel_m_per_s2[0], last_good_sample.accel_m_per_s2[1], last_good_sample.accel_m_per_s2[2],
+                    last_good_sample.temp,last_good_sample.saturated ? " | SATURATED" : "");
+            last_summary_us = now_us;
         }
     }
 }
@@ -485,7 +512,9 @@ bool start(const Pins &pins)
         ESP_LOGE(TAG, "Adding the SCH16T to the bus failed");
         return false;
     }
-
+    gpio_set_drive_capability(pins.sclk, GPIO_DRIVE_CAP_0); // weakest drive = softer edges, less ringing on wires
+    gpio_set_drive_capability(pins.mosi, GPIO_DRIVE_CAP_0);
+    
     imu_queue = xQueueCreate(IMU_QUEUE_LENGTH, sizeof(Sample));
     if (imu_queue == nullptr) {
         ESP_LOGE(TAG, "Queue create failed (out of RAM?)");
@@ -503,7 +532,7 @@ bool start(const Pins &pins)
 }
 
 bool imu_wait_for_sample(Sample &sample_out, uint32_t timeout_ms){
-    if (imu_queue == nullptr) { // IMU never started: act like "no sample", and don't let the caller spin
+    if (imu_queue == nullptr) {
         vTaskDelay(pdMS_TO_TICKS(timeout_ms));
         return false;
     }

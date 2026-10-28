@@ -23,7 +23,7 @@
 
 namespace sd_log {
 
-constexpr const char *TAG = "SD";
+constexpr const char *TAG = "  SD";
 constexpr const char *MOUNT_POINT = "/sdcard";
 
 constexpr int SPI_CLOCK_KHZ = 10000; // 10 MHz: kind to jumper wires

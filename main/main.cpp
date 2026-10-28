@@ -1,7 +1,7 @@
 // =========================================================================
 // main.cpp
 // =========================================================================
-
+ 
 #include "sdkconfig.h"
 
 #include "driver/gpio.h"
@@ -24,7 +24,7 @@ constexpr IMU::Pins IMUPins = { .spi_host = SPI3_HOST, .mosi = GPIO_NUM_5, .miso
 
 
 extern "C" void app_main(void){
-    
+
     if (gnss::start(GnssPins)) {
         ESP_LOGI("main", "GNSS task started");
     } else {

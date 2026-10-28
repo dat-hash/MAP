@@ -37,6 +37,8 @@ namespace gnss {
 
 // SETTING
 constexpr const char *TAG = "GNSS";
+constexpr const char *NO_TAG = "    ";
+constexpr const char *LINE = "";
 
 // BAUD RATE
 constexpr uint32_t TARGET_BAUD = 115200;
@@ -762,9 +764,14 @@ void publish(const Fix &fix){
     g_had_fix = fix.fix_ok;
 
     if (g_epochs % LOG_INTERVAL_EPOCHS == 0) {
-        ESP_LOGI(TAG, "%u sats | hAcc %.2f m | %.1f km/h | rejected %" PRIu32 "/100 | ""bad checksums %" PRIu32 " | dropped %" PRIu32,
-                 static_cast<unsigned>(fix.satellites), fix.h_acc_m, fix.speed_kmh, g_rejected, g_bad_checksums, g_dropped);
+
+        ESP_LOGI(TAG,"%u sats | hAcc %.2f m | rejected %" PRIu32 "/100 | ""bad checksums %" PRIu32 " | dropped %" PRIu32, 
+                static_cast<unsigned>(fix.satellites), fix.h_acc_m, g_rejected, g_bad_checksums, g_dropped);
+
+        ESP_LOGI(NO_TAG, "LAT: %f | LON: %f | ALT: %f m |%.1f km/h",fix.filt_lat_deg,fix.filt_lon_deg,fix.filt_alt_m,fix.speed_kmh);
         g_rejected = 0;
+
+        ESP_LOGI(LINE,"----------------------------------------------------------------------------------------------------");
     }
 }
 

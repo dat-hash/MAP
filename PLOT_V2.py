@@ -4,10 +4,19 @@ import folium
 
 print('program start')
 
-df = pd.read_csv('PATH0001.CSV')
+df_gnss = pd.read_csv('PATH0001.CSV')
+df_imu = pd.read_csv('IMU0001.CSV')
 
-lon = df.iloc[1::10,20]
-lat = df.iloc[1::10,19]
+lon = df_gnss.iloc[1::10,20]
+lat = df_gnss.iloc[1::10,19]
+
+gyro_x = df_gnss
+gyro_y = df_gnss
+gyro_z = df_gnss
+
+accel_x = df_gnss
+accel_x = df_gnss
+accel_x = df_gnss
 
 print(lat)
 print (lon)
